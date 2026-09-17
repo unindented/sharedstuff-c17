@@ -1,4 +1,8 @@
-# `sharedstuff`
+<div align="center">
+  <img src="media/logo.png" height="300" alt="">
+</div>
+
+<h1 align="center"><code>sharedstuff</code></h1>
 
 Some stuff I use in different C17 projects.
 
