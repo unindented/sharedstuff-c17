@@ -1,4 +1,4 @@
-FROM docker.io/library/ubuntu:26.04@sha256:9559ceb7c21e528e233e8dff26a0fb2682f4094cce06176eeb075d87a22b31de
+FROM docker.io/library/ubuntu:26.04@sha256:3595d7fc4286a33fad0fd853a4063e654287a9c3787437d7937c94ca3f7a804e
 
 ARG LLVM_VERSION=22
 
