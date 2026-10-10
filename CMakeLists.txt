@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25...4.0)
 
-# Match the consumers' default while allowing builders to raise it.
+# Set this target before `project()` because compiler checks use it. Builders can raise the value.
 set(CMAKE_OSX_DEPLOYMENT_TARGET
     "13.0"
     CACHE STRING "Minimum macOS version the build targets"
@@ -14,26 +14,47 @@ project(
   LANGUAGES C
 )
 
-if(PROJECT_IS_TOP_LEVEL)
-  list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
-  include(sharedstuff_quality)
-endif()
-
 if(PROJECT_IS_TOP_LEVEL AND "${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
   message(FATAL_ERROR "in-source builds are unsupported; use a preset or '-B build/<name>'")
 endif()
 
-option(SHAREDSTUFF_BUILD_TESTING "Build the SharedStuff tests" "${PROJECT_IS_TOP_LEVEL}")
-option(SHAREDSTUFF_INSTALL "Generate install rules for SharedStuff" "${PROJECT_IS_TOP_LEVEL}")
+if(NOT DEFINED SHAREDSTUFF_BUILD_TESTING)
+  set(SHAREDSTUFF_BUILD_TESTING "${PROJECT_IS_TOP_LEVEL}")
+endif()
+if(NOT DEFINED SHAREDSTUFF_INSTALL)
+  set(SHAREDSTUFF_INSTALL "${PROJECT_IS_TOP_LEVEL}")
+endif()
 
 if(SHAREDSTUFF_BUILD_TESTING)
   if(PROJECT_IS_TOP_LEVEL)
     enable_testing()
   else()
-    message(
-      STATUS "SharedStuff tests are enabled as a child; the parent must call 'enable_testing()'"
-    )
+    message(STATUS "SharedStuff tests are enabled as a child; the parent must call 'enable_testing()' at its top level")
   endif()
+endif()
+
+if(NOT DEFINED CMAKE_C_STANDARD)
+  set(CMAKE_C_STANDARD 17)
+endif()
+if(NOT DEFINED CMAKE_C_STANDARD_REQUIRED)
+  set(CMAKE_C_STANDARD_REQUIRED TRUE)
+endif()
+if(NOT DEFINED CMAKE_C_EXTENSIONS)
+  set(CMAKE_C_EXTENSIONS FALSE)
+endif()
+
+set(CMAKE_LINK_LIBRARIES_ONLY_TARGETS TRUE)
+set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
+
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
+
+include(sharedstuff_build_profiles)
+
+if(PROJECT_IS_TOP_LEVEL)
+  include(sharedstuff_quality)
+endif()
+if(SHAREDSTUFF_BUILD_TESTING)
+  include(sharedstuff_testing)
 endif()
 
 add_library(SharedStuff STATIC)
@@ -52,42 +73,10 @@ target_include_directories(
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
          "$<INSTALL_INTERFACE:include>"
 )
-
-target_compile_options(
-  SharedStuff
-  PRIVATE
-    $<$<AND:$<C_COMPILER_ID:GNU,Clang,AppleClang>,$<CONFIG:Debug>>:-Og>
-    "$<$<AND:$<C_COMPILER_ID:GNU,Clang,AppleClang>,$<CONFIG:Release,RelWithDebInfo,MinSizeRel>>:SHELL:-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3>"
-    $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wall;-Wextra;-Wpedantic;-Wformat=2;-Wvla>
-    $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wconversion;-Wsign-conversion;-Wstrict-prototypes;-Wmissing-prototypes;-Wshadow;-Wundef;-Wcast-qual;-Wwrite-strings>
-    $<$<C_COMPILER_ID:GNU>:-Wlogical-op;-Wduplicated-cond;-Wshift-overflow=2>
-    $<$<C_COMPILER_ID:Clang,AppleClang>:-Wconditional-uninitialized;-Wassign-enum;-Wcomma>
-)
-
-set(SHAREDSTUFF_SANITIZER
-    "none"
-    CACHE STRING "Sanitizer to instrument the shared library with"
-)
-set_property(CACHE SHAREDSTUFF_SANITIZER PROPERTY STRINGS none address thread)
-
-if(SHAREDSTUFF_SANITIZER STREQUAL "none")
-  set(sharedstuff_sanitizer_flags "")
-elseif(SHAREDSTUFF_SANITIZER STREQUAL "address")
-  set(sharedstuff_sanitizer_flags -fsanitize=address,undefined -fno-sanitize-recover=all
-                                  -fno-omit-frame-pointer
-  )
-elseif(SHAREDSTUFF_SANITIZER STREQUAL "thread")
-  set(sharedstuff_sanitizer_flags -fsanitize=thread -fno-sanitize-recover=all
-                                  -fno-omit-frame-pointer
-  )
-else()
-  message(
-    FATAL_ERROR
-      "SHAREDSTUFF_SANITIZER must be one of none, address, thread; got '${SHAREDSTUFF_SANITIZER}'"
-  )
-endif()
-
-target_compile_options(SharedStuff PRIVATE ${sharedstuff_sanitizer_flags})
+# The build profile is a build-tree detail, so the installed package does not name it.
+target_link_libraries(SharedStuff PRIVATE "$<BUILD_INTERFACE:sharedstuff_build_project>")
+# A static library instrumented with a sanitizer needs the sanitizer runtime in the final link, so
+# whatever links the library gets the same link flags.
 target_link_options(SharedStuff PUBLIC ${sharedstuff_sanitizer_flags})
 
 if(PROJECT_IS_TOP_LEVEL)
@@ -102,26 +91,7 @@ if(SHAREDSTUFF_BUILD_TESTING)
   )
 
   foreach(module IN ITEMS arena string_buffer)
-    add_executable("sharedstuff_unit_${module}" "src/test_${module}.c")
-    target_compile_features("sharedstuff_unit_${module}" PRIVATE c_std_17)
-    target_compile_options(
-      "sharedstuff_unit_${module}"
-      PRIVATE $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wall;-Wextra;-Wpedantic;-Wformat=2;-Wvla>
-    )
-    target_link_libraries(
-      "sharedstuff_unit_${module}"
-      PRIVATE SharedStuff::SharedStuff sharedstuff_vendor_acutest
-    )
-    if(PROJECT_IS_TOP_LEVEL)
-      sharedstuff_enable_test_analysis("sharedstuff_unit_${module}")
-    endif()
-    add_test(NAME "sharedstuff.${module}" COMMAND "sharedstuff_unit_${module}")
-    set_tests_properties(
-      "sharedstuff.${module}"
-      PROPERTIES LABELS "sharedstuff;unit"
-                 ENVIRONMENT_MODIFICATION
-                 "ASAN_OPTIONS=string_prepend:allocator_may_return_null=1:;TSAN_OPTIONS=string_prepend:allocator_may_return_null=1:;UBSAN_OPTIONS=string_prepend:print_stacktrace=1:"
-    )
+    sharedstuff_add_unit_test(${module})
   endforeach()
 endif()
 

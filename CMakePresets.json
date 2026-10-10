@@ -17,6 +17,7 @@
     {
       "name": "debug",
       "inherits": "base",
+      "displayName": "Debug with ASan and UBSan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "SHAREDSTUFF_SANITIZER": "address"
@@ -25,6 +26,7 @@
     {
       "name": "tsan",
       "inherits": "base",
+      "displayName": "Debug with TSan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "SHAREDSTUFF_SANITIZER": "thread"
@@ -33,6 +35,7 @@
     {
       "name": "release",
       "inherits": "base",
+      "displayName": "Optimized release with debug information",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "SHAREDSTUFF_BUILD_TESTING": "OFF"
@@ -41,13 +44,23 @@
     {
       "name": "multi",
       "inherits": "base",
+      "displayName": "Ninja multi-config",
       "generator": "Ninja Multi-Config"
     }
   ],
   "buildPresets": [
-    { "name": "debug", "configurePreset": "debug" },
-    { "name": "tsan", "configurePreset": "tsan" },
-    { "name": "release", "configurePreset": "release" },
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
     {
       "name": "multi-debug",
       "configurePreset": "multi",
@@ -66,30 +79,32 @@
   ],
   "testPresets": [
     {
-      "name": "debug",
-      "configurePreset": "debug",
+      "name": "base",
+      "hidden": true,
       "output": { "outputOnFailure": true },
       "execution": { "noTestsAction": "error" }
+    },
+    {
+      "name": "debug",
+      "inherits": "base",
+      "configurePreset": "debug"
     },
     {
       "name": "tsan",
-      "configurePreset": "tsan",
-      "output": { "outputOnFailure": true },
-      "execution": { "noTestsAction": "error" }
+      "inherits": "base",
+      "configurePreset": "tsan"
     },
     {
       "name": "multi-debug",
+      "inherits": "base",
       "configurePreset": "multi",
-      "configuration": "Debug",
-      "output": { "outputOnFailure": true },
-      "execution": { "noTestsAction": "error" }
+      "configuration": "Debug"
     },
     {
       "name": "multi-relwithdebinfo",
+      "inherits": "base",
       "configurePreset": "multi",
-      "configuration": "RelWithDebInfo",
-      "output": { "outputOnFailure": true },
-      "execution": { "noTestsAction": "error" }
+      "configuration": "RelWithDebInfo"
     }
   ],
   "workflowPresets": [

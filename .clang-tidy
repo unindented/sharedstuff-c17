@@ -4,5 +4,5 @@ Checks: >
   -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
   bugprone-branch-clone
 WarningsAsErrors: '*'
-HeaderFilterRegex: '.*/(include/shared|src)/[^/]+\.(c|h)$'
+HeaderFilterRegex: '.*/(include/shared|src)/.+\.h$'
 FormatStyle: file
