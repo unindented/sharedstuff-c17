@@ -23,6 +23,13 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL CMAKE_HOST_SYSTEM_NAME)
   set(sharedstuff_cppcheck_command "")
 endif()
 
+# clang-tidy reads the compiler's command line, and it rejects GCC-only warning options such as
+# `-Wlogical-op` as errors. cppcheck does not read the flags, so it runs with any compiler.
+if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
+  message(VERBOSE "compiler is ${CMAKE_C_COMPILER_ID}, not Clang; clang-tidy is disabled")
+  set(sharedstuff_clang_tidy_command "")
+endif()
+
 function(sharedstuff_enable_project_analysis target)
   if(sharedstuff_clang_tidy_command)
     set_property(

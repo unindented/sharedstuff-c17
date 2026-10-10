@@ -58,7 +58,7 @@ Vendored dependencies are included under `vendor/`:
 
 ### Building
 
-Presets keep every build out of the source tree. The commands below use eight parallel build jobs. Adjust that number for the machine.
+Presets keep every build out of the source tree, in `build/<preset>`. A build with `CC` set goes in `build/<preset>/<CC>` instead, such as `build/debug/gcc-14`, so each compiler keeps its own CMake cache: CMake reads `CC` only when it first configures a directory. clang-tidy runs only with Clang, because it rejects GCC's warning options. The commands below use eight parallel build jobs. Adjust that number for the machine.
 
 #### Debug build
 
@@ -157,7 +157,7 @@ The `multi-relwithdebinfo` test preset exercises the same CMake configuration us
 
 #### CI workflows
 
-Workflow presets run the complete configure, build, and test sequences used by CI:
+Workflow presets run the complete configure, build, and test sequences used by CI. CI runs `ci-multi` a second time with `CC=gcc-14` to check GCC:
 
 - `cmake --workflow --preset ci-debug`: `Debug` build, linting, and all ASan/UBSan tests.
 - `cmake --workflow --preset ci-tsan`: TSan build and all tests.
@@ -180,6 +180,7 @@ podman run --rm sharedstuff-linux-ci ci-debug
 podman run --rm sharedstuff-linux-ci ci-tsan
 podman run --rm sharedstuff-linux-ci ci-release
 podman run --rm sharedstuff-linux-ci ci-multi
+podman run --rm -e CC=gcc-14 sharedstuff-linux-ci ci-multi
 ```
 
-The image supports x86-64 and AArch64 hosts and pins LLVM 22.
+The image supports x86-64 and AArch64 hosts and pins LLVM 22 and GCC 14.
