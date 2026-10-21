@@ -1,0 +1,127 @@
+#include "test_oom.h"
+
+#include <acutest.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <string.h>
+
+#include "shared/arena.h"
+#include "shared/buf.h"
+#include "shared/log.h"
+#include "shared/str.h"
+
+/** Bytes of backing memory each test's arena covers. */
+enum { MEMORY_LEN = 4096 };
+
+/** Backing memory for the arenas under test. */
+static _Alignas(max_align_t) char memory[MEMORY_LEN];
+
+/**
+ * @brief Records an error through `log_error_v`, as a program's forwarding wrapper does.
+ *
+ * @param log    Log to append to. Must not be `NULL`.
+ * @param format `printf` format. Must not be `NULL`.
+ * @param ...    Arguments that the format converts.
+ * @return What `log_error_v` returns.
+ */
+static int forward_error(struct Log* log, const char* format, ...)
+    __attribute__((format(printf, 2, 3), nonnull(1, 2)));
+
+static int forward_error(struct Log* log, const char* format, ...) {
+  va_list args;
+  va_start(args, format);
+  const int rc = log_error_v(log, format, args);
+  va_end(args);
+  return rc;
+}
+
+/**
+ * @brief Records an error longer than a 16-byte arena holds. Run through `test_is_oom`.
+ *
+ * @param arg Unused.
+ */
+static void log_past_arena(void* arg) {
+  (void)arg;
+  struct Arena arena = {.beg = memory, .end = memory + 16};
+  struct Log log = {.buf = {.arena = &arena}};
+  log_error(&log, "an error longer than the arena");
+}
+
+// Each error is one line in the order it was recorded, and each one is counted.
+static void test_errors_append_lines_and_count(void) {
+  struct Arena arena = {.beg = memory, .end = memory + MEMORY_LEN};
+  struct Log log = {.buf = {.arena = &arena}};
+  TEST_CHECK(log_error(&log, "first") == -1);
+  const struct Str value = S("x");
+  TEST_CHECK(log_error(&log, "second '%.*s' at %d", STR_FMT(value), 2) == -1);
+  TEST_CHECK(log.errors == 2);
+  TEST_CHECK(str_eq(buf_str(&log.buf), S("first\nsecond 'x' at 2\n")));
+}
+
+// A message is never truncated, however long its values are.
+static void test_long_message_is_kept_whole(void) {
+  struct Arena arena = {.beg = memory, .end = memory + MEMORY_LEN};
+  struct Log log = {.buf = {.arena = &arena}};
+  char value[2000];
+  memset(value, 'v', sizeof(value));
+  const struct Str long_value = {value, (ptrdiff_t)sizeof(value)};
+  log_error(&log, "bad value: '%.*s'", STR_FMT(long_value));
+  TEST_CHECK(log.buf.len == (ptrdiff_t)sizeof("bad value: ''\n") - 1 + (ptrdiff_t)sizeof(value));
+  TEST_CHECK(str_endswith(buf_str(&log.buf), S("vvv'\n")));
+}
+
+// An error found inside a file names it after the message, and an empty file names nothing.
+static void test_error_in_names_file(void) {
+  struct Arena arena = {.beg = memory, .end = memory + MEMORY_LEN};
+  struct Log log = {.buf = {.arena = &arena}};
+  const struct Str key = S("title");
+  TEST_CHECK(log_error_in(&log, S("a.md"), "key '%.*s' must be a string", STR_FMT(key)) == -1);
+  TEST_CHECK(log_error_in(&log, (struct Str){0}, "no file") == -1);
+  TEST_CHECK(log.errors == 2);
+  TEST_CHECK(str_eq(buf_str(&log.buf), S("key 'title' must be a string (in 'a.md')\nno file\n")));
+}
+
+// A wrapper that forwards its format and arguments through `log_error_v` records the same line as
+// `log_error`.
+static void test_forwarded_error_matches_direct(void) {
+  struct Arena arena = {.beg = memory, .end = memory + MEMORY_LEN};
+  struct Log log = {.buf = {.arena = &arena}};
+  const struct Str key = S("x");
+  const ptrdiff_t offset = 3;
+  TEST_CHECK(forward_error(&log, "bad key '%.*s' at %td", STR_FMT(key), offset) == -1);
+  TEST_CHECK(log_error(&log, "bad key '%.*s' at %td", STR_FMT(key), offset) == -1);
+  TEST_CHECK(log.errors == 2);
+  TEST_CHECK(str_eq(buf_str(&log.buf), S("bad key 'x' at 3\nbad key 'x' at 3\n")));
+}
+
+// Appending one log to another keeps both sets of messages in order and adds the counts, and leaves
+// the source as it was.
+static void test_append_concatenates_logs(void) {
+  struct Arena first_arena = {.beg = memory, .end = memory + MEMORY_LEN / 2};
+  struct Arena second_arena = {.beg = memory + MEMORY_LEN / 2, .end = memory + MEMORY_LEN};
+  struct Log log = {.buf = {.arena = &first_arena}};
+  struct Log source = {.buf = {.arena = &second_arena}};
+  log_error(&log, "a");
+  log_error(&source, "b");
+  log_error(&source, "c");
+  log_append(&log, &source);
+  TEST_CHECK(log.errors == 3);
+  TEST_CHECK(str_eq(buf_str(&log.buf), S("a\nb\nc\n")));
+  TEST_CHECK(source.errors == 2);
+  TEST_CHECK(str_eq(buf_str(&source.buf), S("b\nc\n")));
+}
+
+// An error that does not fit the log's arena ends in `os_oom` rather than being dropped or cut.
+static void test_log_past_arena_is_oom(void) {
+  TEST_CHECK(test_is_oom(log_past_arena, NULL));
+}
+
+TEST_LIST = {
+    {"errors append lines and count", test_errors_append_lines_and_count},
+    {"long message is kept whole", test_long_message_is_kept_whole},
+    {"error in names file", test_error_in_names_file},
+    {"forwarded error matches direct", test_forwarded_error_matches_direct},
+    {"append concatenates logs", test_append_concatenates_logs},
+    {"log past arena is oom", test_log_past_arena_is_oom},
+    {NULL, NULL},
+};

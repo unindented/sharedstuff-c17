@@ -62,10 +62,11 @@ add_library(SharedStuff::SharedStuff ALIAS SharedStuff)
 
 target_sources(
   SharedStuff
-  PRIVATE src/arena.c src/string_buffer.c
+  PRIVATE src/arena.c src/buf.c src/log.c src/str.c
   PUBLIC FILE_SET HEADERS
          BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-         FILES include/shared/arena.h include/shared/string_buffer.h
+         FILES include/shared/arena.h include/shared/buf.h include/shared/log.h
+               include/shared/str.h
 )
 target_compile_features(SharedStuff PUBLIC c_std_17)
 target_include_directories(
@@ -90,8 +91,42 @@ if(SHAREDSTUFF_BUILD_TESTING)
     INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/vendor/acutest"
   )
 
-  foreach(module IN ITEMS arena string_buffer)
+  foreach(module IN ITEMS arena buf log str)
     sharedstuff_add_unit_test(${module})
+  endforeach()
+
+  # The `format` attribute on `buf_printf` and `log_error` must make the compiler refuse a call
+  # whose arguments disagree with its format. Each case compiles `src/test_format_compile.c` with
+  # one macro defined and expects the compiler error in `expect`, in Clang's or GCC's wording. The
+  # control case defines none and must compile. Fields are separated by `~`, because a regex holds
+  # `|`.
+  set(sharedstuff_format_compile_cases
+      "control~"
+      "raw_str~TEST_FORMAT_RAW_STR~type 'struct Str'"
+      "missing_argument~TEST_FORMAT_MISSING_ARGUMENT~more '%' conversions than data arguments|expects a matching"
+      "ptrdiff_as_int~TEST_FORMAT_PTRDIFF_AS_INT~type 'ptrdiff_t'"
+      "nonliteral~TEST_FORMAT_NONLITERAL~format( string is)? not a string literal"
+      "fmt_of_int~TEST_FORMAT_FMT_OF_INT~incompatible type"
+      "forwarded~TEST_FORMAT_FORWARDED~type 'struct Str'"
+  )
+  foreach(compile_case IN LISTS sharedstuff_format_compile_cases)
+    string(REPLACE "~" ";" compile_case "${compile_case}")
+    list(GET compile_case 0 name)
+    list(GET compile_case 1 define)
+    set(expect "")
+    if(define)
+      list(GET compile_case 2 expect)
+    endif()
+    add_test(
+      NAME "sharedstuff.format_compile.${name}"
+      COMMAND
+        "${CMAKE_COMMAND}" "-DCOMPILER=${CMAKE_C_COMPILER}"
+        "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/src/test_format_compile.c"
+        "-DINCLUDE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/include" "-DCASE=${define}" "-DEXPECT=${expect}"
+        "-DSYSROOT=${CMAKE_OSX_SYSROOT}" -P
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sharedstuff_compile_fail.cmake"
+    )
+    set_tests_properties("sharedstuff.format_compile.${name}" PROPERTIES LABELS "sharedstuff;unit")
   endforeach()
 endif()
 

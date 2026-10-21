@@ -4,11 +4,20 @@ include_guard(GLOBAL)
 
 set(sharedstuff_owned_sources
     "${PROJECT_SOURCE_DIR}/include/shared/arena.h"
-    "${PROJECT_SOURCE_DIR}/include/shared/string_buffer.h"
+    "${PROJECT_SOURCE_DIR}/include/shared/buf.h"
+    "${PROJECT_SOURCE_DIR}/include/shared/log.h"
+    "${PROJECT_SOURCE_DIR}/include/shared/str.h"
     "${PROJECT_SOURCE_DIR}/src/arena.c"
-    "${PROJECT_SOURCE_DIR}/src/string_buffer.c"
+    "${PROJECT_SOURCE_DIR}/src/asan.h"
+    "${PROJECT_SOURCE_DIR}/src/buf.c"
+    "${PROJECT_SOURCE_DIR}/src/log.c"
+    "${PROJECT_SOURCE_DIR}/src/str.c"
     "${PROJECT_SOURCE_DIR}/src/test_arena.c"
-    "${PROJECT_SOURCE_DIR}/src/test_string_buffer.c"
+    "${PROJECT_SOURCE_DIR}/src/test_buf.c"
+    "${PROJECT_SOURCE_DIR}/src/test_log.c"
+    "${PROJECT_SOURCE_DIR}/src/test_format_compile.c"
+    "${PROJECT_SOURCE_DIR}/src/test_str.c"
+    "${PROJECT_SOURCE_DIR}/src/test_oom.h"
 )
 
 find_program(SHAREDSTUFF_CLANG_FORMAT NAMES clang-format-22 clang-format)
