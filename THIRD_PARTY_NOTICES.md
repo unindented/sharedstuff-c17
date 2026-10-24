@@ -6,6 +6,8 @@ This project vendors the following third-party libraries.
 
 ### acutest (https://github.com/mity/acutest)
 
+Vendored at commit `31751b4089c93b46a9fd8a8183a695f772de66de`.
+
 Copyright (c) 2013-2023 Martin Mitáš
 
 Copyright (c) 2019 Garrett D'Amore
