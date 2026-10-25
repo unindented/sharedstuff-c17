@@ -162,7 +162,7 @@ Inside a fallible function, `return log_error(log, "failed to read '%.*s': %s", 
 
 - POSIX-like system with CMake 3.25 or later and a C17 compiler such as Clang or GCC.
 - Optional build tools: `ninja` for the multi-config portability check.
-- Optional quality tools: `clang-format`, `clang-tidy`, `cppcheck`.
+- Optional quality tools: `clang-format`, `cwrap`, `clang-tidy`, `cppcheck`.
 
 Vendored dependencies are included under `vendor/`:
 
