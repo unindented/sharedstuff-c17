@@ -295,4 +295,4 @@ podman run --rm sharedstuff-linux-ci ci-multi
 podman run --rm -e CC=gcc-14 sharedstuff-linux-ci ci-multi
 ```
 
-The image supports x86-64 and AArch64 hosts and pins LLVM 22 and GCC 14.
+The image supports x86-64 and AArch64 hosts and pins LLVM 23 and GCC 14.

@@ -20,9 +20,9 @@ set(sharedstuff_owned_sources
     "${PROJECT_SOURCE_DIR}/src/test_oom.h"
 )
 
-find_program(SHAREDSTUFF_CLANG_FORMAT NAMES clang-format-22 clang-format)
+find_program(SHAREDSTUFF_CLANG_FORMAT NAMES clang-format-23 clang-format)
 find_program(SHAREDSTUFF_CWRAP NAMES cwrap)
-find_program(SHAREDSTUFF_CLANG_TIDY NAMES clang-tidy-22 clang-tidy)
+find_program(SHAREDSTUFF_CLANG_TIDY NAMES clang-tidy-23 clang-tidy)
 find_program(SHAREDSTUFF_CPPCHECK NAMES cppcheck)
 
 set(sharedstuff_clang_tidy_command "${SHAREDSTUFF_CLANG_TIDY}")
