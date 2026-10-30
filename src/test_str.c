@@ -8,20 +8,27 @@
 #include "shared/str.h"
 
 /** Bytes of backing memory each test's arena covers. */
-enum { MEMORY_LEN = 4096 };
+enum { MEMORY_SIZE = 4096 };
+
+/** Bytes of the arena a clone does not fit. */
+enum { ARENA_SMALL_LEN = 64 };
+
+/** Bytes of the buffer `STR_FMT` prints into, terminator included. */
+enum { OUT_SIZE = 16 };
 
 /** Backing memory for the arena under test. */
-static _Alignas(max_align_t) char memory[MEMORY_LEN];
+static _Alignas(max_align_t) char memory[MEMORY_SIZE];
 
 /**
- * @brief Clones a string longer than a 64-byte arena holds. Run through `test_is_oom`.
+ * @brief Clones a string longer than an `ARENA_SMALL_LEN`-byte arena holds. Run through
+ *        `test_is_oom`.
  *
  * @param arg Unused.
  */
 static void clone_past_arena(void* arg) {
   (void)arg;
-  struct Arena arena = {.beg = memory, .end = memory + 64};
-  (void)str_clone((struct Str){memory + 64, 64}, &arena);
+  struct Arena arena = {.beg = memory, .end = memory + ARENA_SMALL_LEN};
+  (void)str_clone((struct Str){memory + ARENA_SMALL_LEN, ARENA_SMALL_LEN}, &arena);
 }
 
 /** Static table built with `STR_INIT`, the constant form of `S`. */
@@ -113,19 +120,19 @@ static void test_cut_trailing_separator_is_found(void) {
 
 // A clone copies the bytes into the arena, so it compares equal but no longer aliases the source.
 static void test_clone_copies_into_arena(void) {
-  struct Arena arena = {.beg = memory, .end = memory + MEMORY_LEN};
+  struct Arena arena = {.beg = memory, .end = memory + MEMORY_SIZE};
   char source[] = "hello";
   const struct Str clone = str_clone((struct Str){source, 5}, &arena);
   source[0] = 'j';
   TEST_CHECK(str_eq(clone, S("hello")));
-  TEST_CHECK(clone.data >= memory && clone.data < memory + MEMORY_LEN);
+  TEST_CHECK(clone.data == memory);
   TEST_CHECK(str_clone((struct Str){NULL, 0}, &arena).len == 0);
 }
 
 // Concatenating onto the arena's last allocation extends it in place, so a run of concatenations
 // copies the head once.
 static void test_concat_extends_last_allocation(void) {
-  struct Arena arena = {.beg = memory, .end = memory + MEMORY_LEN};
+  struct Arena arena = {.beg = memory, .end = memory + MEMORY_SIZE};
   struct Str joined = str_concat(S("ab"), S("cd"), &arena);
   const char* const data = joined.data;
   joined = str_concat(joined, S("ef"), &arena);
@@ -137,7 +144,7 @@ static void test_concat_extends_last_allocation(void) {
 // A head that is not the last allocation is copied before the tail is appended, and the old bytes
 // stay as they were.
 static void test_concat_copies_older_head(void) {
-  struct Arena arena = {.beg = memory, .end = memory + MEMORY_LEN};
+  struct Arena arena = {.beg = memory, .end = memory + MEMORY_SIZE};
   const struct Str head = str_clone(S("ab"), &arena);
   (void)arena_new(&arena, 1, char);
   const struct Str joined = str_concat(head, S("cd"), &arena);
@@ -148,7 +155,7 @@ static void test_concat_copies_older_head(void) {
 
 // `str_cstr` appends a terminator after the copied bytes, and an empty string yields `""`.
 static void test_cstr_terminates_copy(void) {
-  struct Arena arena = {.beg = memory, .end = memory + MEMORY_LEN};
+  struct Arena arena = {.beg = memory, .end = memory + MEMORY_SIZE};
   TEST_CHECK(strcmp(str_cstr(str_head(S("abcdef"), 3), &arena), "abc") == 0);
   TEST_CHECK(strcmp(str_cstr((struct Str){NULL, 0}, &arena), "") == 0);
 }
@@ -156,9 +163,9 @@ static void test_cstr_terminates_copy(void) {
 // `STR_FMT` prints exactly the string's bytes, without reading past them, and an empty string with
 // no bytes prints nothing.
 static void test_fmt_prints_exact_bytes(void) {
-  char out[16];
+  char out[OUT_SIZE];
   const struct Str head = str_head(S("abcdef"), 3);
-  const struct Str empty = {NULL, 0};
+  const struct Str empty = {0};
   (void)snprintf(out, sizeof(out), "[%.*s][%.*s]", STR_FMT(head), STR_FMT(empty));
   TEST_CHECK(strcmp(out, "[abc][]") == 0);
 }

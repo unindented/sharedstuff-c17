@@ -11,6 +11,15 @@
 #include "shared/log.h"
 #include "shared/str.h"
 
+/**
+ * @brief Makes each call under test with arguments its format matches, then the rejected call that
+ *        the defined `TEST_FORMAT_` macro selects, if any.
+ *
+ * @param buffer Buffer the calls append to.
+ * @param log    Log the calls record to.
+ * @param path   String the formats print.
+ * @param count  Count the formats print.
+ */
 void test_format_compile(struct Buf* buffer, struct Log* log, struct Str path, ptrdiff_t count);
 
 /**

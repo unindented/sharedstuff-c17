@@ -12,7 +12,7 @@
 #include "shared/buf.h"
 
 /** Bytes of backing memory each test's arena covers. */
-enum { MEMORY_LEN = 4096 };
+enum { MEMORY_SIZE = 4096 };
 
 /** Bytes of address space each test that reserves one asks for. */
 enum { RESERVE_LEN = 8 * 1024 * 1024 };
@@ -21,14 +21,14 @@ enum { RESERVE_LEN = 8 * 1024 * 1024 };
 enum { DISCARD_LEN = 256 * 1024 };
 
 /** Backing memory for the arena under test, aligned for any type. */
-static _Alignas(max_align_t) char memory[MEMORY_LEN];
+static _Alignas(max_align_t) char memory[MEMORY_SIZE];
 
 /**
  * @brief Returns an arena over the first `len` bytes of `memory`, filled with a non-zero pattern.
  *
  * The pattern lets a test tell zeroed storage apart from memory that merely started out zero.
  *
- * @param len Number of bytes the arena covers. At most `MEMORY_LEN`.
+ * @param len Number of bytes the arena covers. At most `MEMORY_SIZE`.
  * @return An arena whose free space is `memory[0, len)`.
  */
 static struct Arena arena_over_memory(ptrdiff_t len) {
@@ -86,6 +86,18 @@ static void alloc_past_split_region(void* arg) {
   (void)arena_extend(&region, 1024 * 1024 + 1, 1);
 }
 
+/**
+ * @brief Splits one byte more than the free space of an arena over `memory`. Run through
+ *        `test_is_oom`.
+ *
+ * @param arg Unused.
+ */
+static void split_past_caller_memory(void* arg) {
+  (void)arg;
+  struct Arena arena = arena_over_memory(MEMORY_SIZE);
+  (void)arena_split(&arena, MEMORY_SIZE + 1);
+}
+
 #if SHARED_ASAN
 /**
  * @brief Reports whether a child process that writes one byte past an arena allocation dies.
@@ -93,7 +105,8 @@ static void alloc_past_split_region(void* arg) {
  * The child's standard error goes to `/dev/null`, so the sanitizer's report does not clutter the
  * test output.
  *
- * @return `true` when the child ended any way other than exiting with status `0`.
+ * @return `true` when the child ended any way other than exiting with status `0`, or `false` when
+ *         it exited with `0` or could not be started or waited for.
  */
 static bool overflow_past_allocation_dies(void) {
   (void)fflush(stdout);
@@ -139,20 +152,21 @@ static void reserve_halving_refused(void* arg) {
 
 // Allocations come back zeroed and distinct, one after the other in the region.
 static void test_allocations_are_zeroed_and_distinct(void) {
-  struct Arena arena = arena_over_memory(MEMORY_LEN);
-  unsigned char* first = arena_new(&arena, 16, unsigned char);
-  unsigned char* second = arena_new(&arena, 16, unsigned char);
-  TEST_CHECK(second == first + 16);
-  for (size_t i = 0; i < 16; i++) {
+  struct Arena arena = arena_over_memory(MEMORY_SIZE);
+  const ptrdiff_t count = 16;
+  unsigned char* first = arena_new(&arena, count, unsigned char);
+  unsigned char* second = arena_new(&arena, count, unsigned char);
+  TEST_CHECK(second == first + count);
+  for (ptrdiff_t i = 0; i < count; i++) {
     TEST_CHECK(first[i] == 0);
     TEST_CHECK(second[i] == 0);
   }
-  TEST_CHECK(arena.beg == memory + 32);
+  TEST_CHECK(arena.beg == memory + 2 * count);
 }
 
 // A typed allocation after an odd-sized one is padded up to the type's alignment.
 static void test_allocation_is_padded_to_alignment(void) {
-  struct Arena arena = arena_over_memory(MEMORY_LEN);
+  struct Arena arena = arena_over_memory(MEMORY_SIZE);
   (void)arena_new(&arena, 1, char);
   int64_t* value = arena_new(&arena, 1, int64_t);
   TEST_CHECK(is_aligned(value, _Alignof(int64_t)));
@@ -162,7 +176,7 @@ static void test_allocation_is_padded_to_alignment(void) {
 
 // A zero count returns a usable pointer and consumes only the padding.
 static void test_zero_count_consumes_only_padding(void) {
-  struct Arena arena = arena_over_memory(MEMORY_LEN);
+  struct Arena arena = arena_over_memory(MEMORY_SIZE);
   (void)arena_new(&arena, 1, char);
   void* empty = arena_new(&arena, 0, int64_t);
   TEST_CHECK(empty == memory + _Alignof(int64_t));
@@ -172,7 +186,7 @@ static void test_zero_count_consumes_only_padding(void) {
 // A copy of an arena allocates past the original's free-space start, and the original keeps that
 // start, so whatever a by-value callee allocates is reclaimed when it returns.
 static void test_copy_reclaims_on_return(void) {
-  struct Arena arena = arena_over_memory(MEMORY_LEN);
+  struct Arena arena = arena_over_memory(MEMORY_SIZE);
   struct Arena scratch = arena;
   char* temporary = arena_new(&scratch, 100, char);
   TEST_CHECK(temporary == memory);
@@ -181,14 +195,14 @@ static void test_copy_reclaims_on_return(void) {
 }
 
 // One byte short of the free space fits. The check refuses a request that would fill it exactly, so
-// that is the boundary: `MEMORY_LEN - 1` bytes is the largest request.
+// that is the boundary: `MEMORY_SIZE - 1` bytes is the largest request.
 static void test_largest_request_is_one_short_of_the_free_space(void) {
-  struct Arena arena = arena_over_memory(MEMORY_LEN);
-  char* bytes = arena_new(&arena, MEMORY_LEN - 1, char);
+  struct Arena arena = arena_over_memory(MEMORY_SIZE);
+  char* bytes = arena_new(&arena, MEMORY_SIZE - 1, char);
   TEST_CHECK(bytes == memory);
-  TEST_CHECK(arena.beg == memory + MEMORY_LEN - 1);
+  TEST_CHECK(arena.beg == memory + MEMORY_SIZE - 1);
 
-  struct AllocRequest exact = {.bytes = MEMORY_LEN, .count = MEMORY_LEN, .size = 1};
+  struct AllocRequest exact = {.bytes = MEMORY_SIZE, .count = MEMORY_SIZE, .size = 1};
   TEST_CHECK(test_is_oom(alloc_request, &exact));
   // The boundary scales with the object size: seven 8-byte objects fit in 64 bytes, and eight do
   // not.
@@ -199,8 +213,10 @@ static void test_largest_request_is_one_short_of_the_free_space(void) {
 }
 
 // `arena_grow` extends the most recent allocation in place, doubling it, and keeps its elements.
+// The first capacity is `ARENA_GROW_CAPACITY_MIN`, 8 in `arena.c`, so changing it must update the
+// counts here.
 static void test_grow_extends_last_allocation_in_place(void) {
-  struct Arena arena = arena_over_memory(MEMORY_LEN);
+  struct Arena arena = arena_over_memory(MEMORY_SIZE);
   ptrdiff_t capacity = 0;
   int32_t* items = arena_grow(&arena, NULL, &capacity, sizeof(int32_t), _Alignof(int32_t));
   TEST_CHECK(capacity == 8);
@@ -214,9 +230,9 @@ static void test_grow_extends_last_allocation_in_place(void) {
 }
 
 // `arena_grow` moves an array that is no longer the most recent allocation, keeping its elements,
-// and leaves the old copy readable.
+// and leaves the old copy readable. The counts follow `ARENA_GROW_CAPACITY_MIN`, as above.
 static void test_grow_moves_an_array_that_is_not_last(void) {
-  struct Arena arena = arena_over_memory(MEMORY_LEN);
+  struct Arena arena = arena_over_memory(MEMORY_SIZE);
   ptrdiff_t capacity = 0;
   int32_t* items = arena_grow(&arena, NULL, &capacity, sizeof(int32_t), _Alignof(int32_t));
   items[0] = 7;
@@ -234,7 +250,7 @@ static void test_reserved_region_becomes_usable_on_demand(void) {
   struct Arena block;
   TEST_ASSERT(arena_reserve(RESERVE_LEN, &block) == 0);
   TEST_CHECK(block.end == block.beg);
-  TEST_CHECK(block.limit - block.beg >= RESERVE_LEN);
+  TEST_CHECK(block.limit - block.beg == RESERVE_LEN);
   struct Arena arena = block;
   const ptrdiff_t len = 3 * 1024 * 1024;
   char* bytes = arena_new(&arena, len, char);
@@ -282,7 +298,8 @@ static void test_reserve_halving_halves_refused_size(void) {
 }
 
 // A split region ends where its share ends, rounded down to a multiple of 16, the parent's free
-// space starts after it, and each makes its own pages usable.
+// space starts after it, and each makes its own pages usable. The 16 is `ARENA_SPLIT_ALIGN` in
+// `arena.c`, so changing it must update the lengths here.
 static void test_split_regions_end_at_their_share(void) {
   struct Arena block;
   TEST_ASSERT(arena_reserve(RESERVE_LEN, &block) == 0);
@@ -309,11 +326,12 @@ static void test_split_regions_end_at_their_share(void) {
 // Splitting memory the caller owns gives a region usable from the start, with nothing to make
 // usable, and a split longer than the free space ends in `os_oom`.
 static void test_split_of_caller_memory_is_usable_at_once(void) {
-  struct Arena arena = arena_over_memory(MEMORY_LEN);
+  struct Arena arena = arena_over_memory(MEMORY_SIZE);
   struct Arena region = arena_split(&arena, 100);
   TEST_CHECK(region.beg == memory && region.end == memory + 100 && region.limit == NULL);
   TEST_CHECK(arena.beg == memory + 100);
   TEST_CHECK(arena_new(&region, 99, char) == memory);
+  TEST_CHECK(test_is_oom(split_past_caller_memory, NULL));
 }
 
 // `arena_extend` continues the last allocation with no padding, and fills the free space exactly.
@@ -373,7 +391,8 @@ static void test_overflow_past_allocation_is_caught(void) {
   TEST_CHECK(__asan_region_is_poisoned(arena.beg, (size_t)(arena.end - arena.beg)) != NULL);
 
   struct Buf buffer = {.arena = &arena};
-  for (int i = 0; i < 100; i++) {
+  const ptrdiff_t len = 100;
+  for (ptrdiff_t i = 0; i < len; i++) {
     buf_append_char(&buffer, 'x');
   }
   TEST_CHECK(__asan_region_is_poisoned(buffer.data, (size_t)buffer.cap) == NULL);
@@ -405,9 +424,9 @@ static void test_request_past_free_space_is_oom(void) {
 // Counts whose byte total would overflow `ptrdiff_t` end in `os_oom` rather than wrapping to a
 // small allocation. The second product wraps to exactly 0.
 static void test_overflowing_count_is_oom(void) {
-  struct AllocRequest largest = {.bytes = MEMORY_LEN, .count = PTRDIFF_MAX, .size = 1};
+  struct AllocRequest largest = {.bytes = MEMORY_SIZE, .count = PTRDIFF_MAX, .size = 1};
   TEST_CHECK(test_is_oom(alloc_request, &largest));
-  struct AllocRequest wraps = {.bytes = MEMORY_LEN, .count = PTRDIFF_MAX / 2 + 1, .size = 2};
+  struct AllocRequest wraps = {.bytes = MEMORY_SIZE, .count = PTRDIFF_MAX / 2 + 1, .size = 2};
   TEST_CHECK(test_is_oom(alloc_request, &wraps));
 }
 
