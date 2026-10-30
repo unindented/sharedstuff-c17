@@ -121,13 +121,13 @@ buf_append_char(&out, '\n');
 struct Str html = buf_str(&out);
 ```
 
-`buf_cstr` adds a terminator that `len` does not count, for an interface that wants a C string. `buf_vprintf` takes a `va_list`, for a function that forwards its own format arguments.
+`buf_cstr` adds a terminator that `len` does not count, for an interface that wants a C string. `buf_vprintf_measured` takes a `va_list` and the length `vsnprintf` measured, for the second pass of a function that formats its own arguments, as `buf_printf` does.
 
 **Rules for correct use:**
 
 - The buffer's arena must outlive the buffer, and the arena must be passed by pointer, never by value, while the buffer still grows.
 - A pointer into the buffer taken before a growth still reads the old bytes, but later appends do not reach it. Take `buf_str` after the last append.
-- `buf_printf` carries the `format` attribute. Compile with `-Wformat` so the compiler checks each format against its arguments.
+- `buf_printf` and `buf_vprintf_measured` carry the `format` attribute. Compile with `-Wformat` so the compiler checks each format against its arguments.
 
 ### `<shared/log.h>`: error logs
 
@@ -147,14 +147,14 @@ if (log.errors > 0) {
 }
 ```
 
-Inside a fallible function, `return log_error(log, "failed to read '%.*s': %s", STR_FMT(path), cause);` records one line and returns `-1`. `log_error_in(log, file, ...)` appends ` (in '<file>')` to a message about an error inside a file. `log_error_v` takes a `va_list`, for a wrapper that adds context. `log_append` copies one log into another, such as a worker's log into the main log after the workers finish.
+Inside a fallible function, `return log_error(log, "failed to read '%.*s': %s", STR_FMT(path), cause);` records one line and returns `-1`. `log_error_in(log, file, ...)` appends ` (in '<file>')` to a message about an error inside a file. A wrapper that adds context formats its own message into scratch memory and records it with `log_error(log, "%.*s", ...)`. `log_append` copies one log into another, such as a worker's log into the main log after the workers finish.
 
 **Rules for correct use:**
 
 - Take the log as the last parameter of a fallible function, and return `-1` from the function when it records an error.
 - Put the log in an arena that nothing else allocates from by value. A region of its own is the simplest choice.
 - Give each thread its own log, and merge the logs with `log_append` in a fixed order after the threads finish, so the output does not depend on scheduling.
-- `log_error`, `log_error_v` and `log_error_in` carry the `format` attribute, and so must any wrapper that forwards a format to them.
+- `log_error` and `log_error_in` carry the `format` attribute, and so must any wrapper that formats its own arguments.
 
 ## Contributing
 

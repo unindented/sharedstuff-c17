@@ -1,7 +1,6 @@
 #include "test_oom.h"
 
 #include <acutest.h>
-#include <stdarg.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -15,25 +14,6 @@ enum { MEMORY_LEN = 4096 };
 
 /** Backing memory for the arenas under test. */
 static _Alignas(max_align_t) char memory[MEMORY_LEN];
-
-/**
- * @brief Records an error through `log_error_v`, as a program's forwarding wrapper does.
- *
- * @param log    Log to append to. Must not be `NULL`.
- * @param format `printf` format. Must not be `NULL`.
- * @param ...    Arguments that the format converts.
- * @return What `log_error_v` returns.
- */
-static int forward_error(struct Log* log, const char* format, ...)
-    __attribute__((format(printf, 2, 3), nonnull(1, 2)));
-
-static int forward_error(struct Log* log, const char* format, ...) {
-  va_list args;
-  va_start(args, format);
-  const int rc = log_error_v(log, format, args);
-  va_end(args);
-  return rc;
-}
 
 /**
  * @brief Records an error longer than a 16-byte arena holds. Run through `test_is_oom`.
@@ -81,19 +61,6 @@ static void test_error_in_names_file(void) {
   TEST_CHECK(str_eq(buf_str(&log.buf), S("key 'title' must be a string (in 'a.md')\nno file\n")));
 }
 
-// A wrapper that forwards its format and arguments through `log_error_v` records the same line as
-// `log_error`.
-static void test_forwarded_error_matches_direct(void) {
-  struct Arena arena = {.beg = memory, .end = memory + MEMORY_LEN};
-  struct Log log = {.buf = {.arena = &arena}};
-  const struct Str key = S("x");
-  const ptrdiff_t offset = 3;
-  TEST_CHECK(forward_error(&log, "bad key '%.*s' at %td", STR_FMT(key), offset) == -1);
-  TEST_CHECK(log_error(&log, "bad key '%.*s' at %td", STR_FMT(key), offset) == -1);
-  TEST_CHECK(log.errors == 2);
-  TEST_CHECK(str_eq(buf_str(&log.buf), S("bad key 'x' at 3\nbad key 'x' at 3\n")));
-}
-
 // Appending one log to another keeps both sets of messages in order and adds the counts, and leaves
 // the source as it was.
 static void test_append_concatenates_logs(void) {
@@ -120,7 +87,6 @@ TEST_LIST = {
     {"errors append lines and count", test_errors_append_lines_and_count},
     {"long message is kept whole", test_long_message_is_kept_whole},
     {"error in names file", test_error_in_names_file},
-    {"forwarded error matches direct", test_forwarded_error_matches_direct},
     {"append concatenates logs", test_append_concatenates_logs},
     {"log past arena is oom", test_log_past_arena_is_oom},
     {NULL, NULL},

@@ -66,17 +66,24 @@ void buf_printf(struct Buf* buffer, const char* format, ...)
     __attribute__((format(printf, 2, 3), nonnull(1, 2)));
 
 /**
- * @brief Appends the text that a `printf` format and a `va_list` produce, as `buf_printf` does.
+ * @brief Appends the text that a `printf` format and a `va_list` produce, once `vsnprintf` has
+ *        measured it.
  *
- * This is the form for a function that forwards its own format and arguments. That function must
- * carry `__attribute__((format(printf, n, m)))` itself, so the compiler checks its callers.
+ * This is the second pass of a function that formats its own arguments, as `buf_printf` does: it
+ * measures the text with `vsnprintf(NULL, 0, ...)`, ends its list, starts it again, and passes it
+ * here. Starting the list twice needs no `va_copy`. A copy of a list that a caller passed in is
+ * what Clang's analyzer reports as uninitialized when it targets AArch64 Linux, whose `va_list` is
+ * a structure. That function must carry `__attribute__((format(printf, n, m)))` itself, so the
+ * compiler checks its callers.
  *
- * @param buffer Buffer to append to. Must not be `NULL`.
- * @param format `printf` format. Must not be `NULL`.
- * @param args   Arguments that the format converts. This call consumes them.
+ * @param buffer   Buffer to append to. Must not be `NULL`.
+ * @param text_len Length of the text, as `vsnprintf` measured it for the same format and arguments.
+ *                 Must not be negative.
+ * @param format   `printf` format. Must not be `NULL`.
+ * @param args     Arguments that the format converts, not yet read. This call consumes them.
  */
-void buf_vprintf(struct Buf* buffer, const char* format, va_list args)
-    __attribute__((format(printf, 2, 0), nonnull(1, 2)));
+void buf_vprintf_measured(struct Buf* buffer, ptrdiff_t text_len, const char* format, va_list args)
+    __attribute__((format(printf, 3, 0), nonnull(1, 3)));
 
 /**
  * @brief Returns the bytes appended so far.

@@ -23,17 +23,6 @@
  */
 static void buf_reserve(struct Buf* buffer, ptrdiff_t need) __attribute__((nonnull(1)));
 
-/**
- * @brief Appends a formatted text whose length is already measured.
- *
- * @param buffer   Buffer to append to. Must not be `NULL`.
- * @param text_len Length of the formatted text, as `vsnprintf` measured it. Must not be negative.
- * @param format   `printf` format of the text. Must not be `NULL`.
- * @param args     Arguments that the format converts, not yet read.
- */
-static void buf_write_formatted(struct Buf* buffer, int text_len, const char* format, va_list args)
-    __attribute__((format(printf, 3, 0), nonnull(1, 3)));
-
 void buf_append(struct Buf* buffer, struct Str s) {
   assert(s.len >= 0);
   buf_reserve(buffer, s.len);
@@ -51,25 +40,30 @@ void buf_append_char(struct Buf* buffer, char c) {
 }
 
 void buf_printf(struct Buf* buffer, const char* format, ...) {
-  // The first pass measures the text, and the second writes it, as in `buf_vprintf`. Starting the
-  // list twice needs no `va_copy`. Passing the list to `buf_vprintf` instead makes Clang's analyzer
-  // report its copy as uninitialized when it targets AArch64 Linux, whose `va_list` is a structure.
+  // The first pass measures the text and the second writes it, as `buf_vprintf_measured` says.
   va_list args;
   va_start(args, format);
-  const int text_len = vsnprintf(NULL, 0, format, args);
+  const ptrdiff_t text_len = vsnprintf(NULL, 0, format, args);
   va_end(args);
   va_start(args, format);
-  buf_write_formatted(buffer, text_len, format, args);
+  buf_vprintf_measured(buffer, text_len, format, args);
   va_end(args);
 }
 
-void buf_vprintf(struct Buf* buffer, const char* format, va_list args) {
-  // The first pass measures the text, and the second writes it into room the buffer reserved.
-  va_list measure_args;
-  va_copy(measure_args, args);
-  const int text_len = vsnprintf(NULL, 0, format, measure_args);
-  va_end(measure_args);
-  buf_write_formatted(buffer, text_len, format, args);
+void buf_vprintf_measured(struct Buf* buffer,
+                          ptrdiff_t text_len,
+                          const char* format,
+                          va_list args) {
+  // `vsnprintf` fails only on a wide-character conversion it cannot encode, which a byte format
+  // never has, or on text longer than `INT_MAX` bytes, which no diagnostic comes near.
+  assert(text_len >= 0);
+  // One byte more than the text, for the terminator `vsnprintf` writes. `len` does not count it.
+  buf_reserve(buffer, text_len + 1);
+  const int written = vsnprintf(buffer->data + buffer->len, (size_t)text_len + 1, format, args);
+  // A length other than the text's would count bytes nobody wrote, or cut the text short.
+  assert(written == text_len);
+  (void)written;
+  buffer->len += text_len;
 }
 
 struct Str buf_str(const struct Buf* buffer) {
@@ -103,18 +97,4 @@ static void buf_reserve(struct Buf* buffer, ptrdiff_t need) {
   const ptrdiff_t extend = buffer->cap > need ? buffer->cap : need;
   (void)arena_extend(arena, extend, 1);
   buffer->cap += extend;
-}
-
-static void buf_write_formatted(struct Buf* buffer,
-                                int text_len,
-                                const char* format,
-                                va_list args) {
-  // `vsnprintf` fails only on a wide-character conversion it cannot encode, which a byte format
-  // never has, or on text longer than `INT_MAX` bytes, which no diagnostic comes near. The `int`
-  // that it counts in is converted here and nowhere else.
-  assert(text_len >= 0);
-  // One byte more than the text, for the terminator `vsnprintf` writes. `len` does not count it.
-  buf_reserve(buffer, (ptrdiff_t)text_len + 1);
-  (void)vsnprintf(buffer->data + buffer->len, (size_t)text_len + 1, format, args);
-  buffer->len += text_len;
 }

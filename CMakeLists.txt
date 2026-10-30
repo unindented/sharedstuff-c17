@@ -107,7 +107,7 @@ if(SHAREDSTUFF_BUILD_TESTING)
       "ptrdiff_as_int~TEST_FORMAT_PTRDIFF_AS_INT~type 'ptrdiff_t'"
       "nonliteral~TEST_FORMAT_NONLITERAL~format( string is)? not a string literal"
       "fmt_of_int~TEST_FORMAT_FMT_OF_INT~incompatible type"
-      "forwarded~TEST_FORMAT_FORWARDED~type 'struct Str'"
+      "wrapper~TEST_FORMAT_WRAPPER~type 'struct Str'"
   )
   foreach(compile_case IN LISTS sharedstuff_format_compile_cases)
     string(REPLACE "~" ";" compile_case "${compile_case}")

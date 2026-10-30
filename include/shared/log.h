@@ -1,7 +1,6 @@
 #ifndef SHARED_LOG_H
 #define SHARED_LOG_H
 
-#include <stdarg.h>
 #include <stddef.h>
 
 #include "shared/buf.h"
@@ -42,20 +41,6 @@ struct Log {
  */
 int log_error(struct Log* log, const char* format, ...)
     __attribute__((format(printf, 2, 3), nonnull(1, 2)));
-
-/**
- * @brief Records one error from a `va_list`, as `log_error` does.
- *
- * This is the form for a function that forwards its own format and arguments. That function must
- * carry `__attribute__((format(printf, n, m)))` itself, so the compiler checks its callers.
- *
- * @param log    Log to append to. Must not be `NULL`.
- * @param format `printf` format of the message, without the newline. Must not be `NULL`.
- * @param args   Arguments that the format converts. This call consumes them.
- * @return `-1` always.
- */
-int log_error_v(struct Log* log, const char* format, va_list args)
-    __attribute__((format(printf, 2, 0), nonnull(1, 2)));
 
 /**
  * @brief Records one error found inside `file`: the message, then ` (in '<file>')`, as one line.

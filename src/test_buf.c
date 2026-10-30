@@ -1,7 +1,9 @@
 #include "test_oom.h"
 
 #include <acutest.h>
+#include <stdarg.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "shared/arena.h"
@@ -13,6 +15,27 @@ enum { MEMORY_LEN = 4096 };
 
 /** Backing memory for the arena under test. */
 static _Alignas(max_align_t) char memory[MEMORY_LEN];
+
+/**
+ * @brief Appends a message in two passes through `buf_vprintf_measured`, as a program's own
+ *        variadic wrapper does.
+ *
+ * @param buffer Buffer to append to. Must not be `NULL`.
+ * @param format `printf` format. Must not be `NULL`.
+ * @param ...    Arguments that the format converts.
+ */
+static void append_formatted(struct Buf* buffer, const char* format, ...)
+    __attribute__((format(printf, 2, 3), nonnull(1, 2)));
+
+static void append_formatted(struct Buf* buffer, const char* format, ...) {
+  va_list args;
+  va_start(args, format);
+  const ptrdiff_t text_len = vsnprintf(NULL, 0, format, args);
+  va_end(args);
+  va_start(args, format);
+  buf_vprintf_measured(buffer, text_len, format, args);
+  va_end(args);
+}
 
 /**
  * @brief Appends one byte more than a 64-byte arena holds. Run through `test_is_oom`.
@@ -146,6 +169,18 @@ static void test_printf_appends_formatted_text(void) {
   TEST_CHECK(str_eq(buf_str(&buffer), S("> read 'a.md' at -3, 7 bytes, 50% done")));
 }
 
+// A wrapper that measures its text and passes its list to `buf_vprintf_measured` appends what
+// `buf_printf` does.
+static void test_measured_printf_matches_printf(void) {
+  struct Arena arena = {.beg = memory, .end = memory + MEMORY_LEN};
+  struct Buf buffer = {.arena = &arena};
+  const struct Str key = S("x");
+  const ptrdiff_t offset = 3;
+  append_formatted(&buffer, "bad key '%.*s' at %td;", STR_FMT(key), offset);
+  buf_printf(&buffer, "bad key '%.*s' at %td;", STR_FMT(key), offset);
+  TEST_CHECK(str_eq(buf_str(&buffer), S("bad key 'x' at 3;bad key 'x' at 3;")));
+}
+
 // While the buffer is the arena's last allocation, a message longer than its capacity grows it in
 // place, and the whole message is kept.
 static void test_printf_grows_in_place(void) {
@@ -206,6 +241,7 @@ TEST_LIST = {
     {"interleaved allocation moves buffer", test_interleaved_allocation_moves_buffer},
     {"self append survives growth", test_self_append_survives_growth},
     {"printf appends formatted text", test_printf_appends_formatted_text},
+    {"measured printf matches printf", test_measured_printf_matches_printf},
     {"printf grows in place", test_printf_grows_in_place},
     {"printf self reference survives growth", test_printf_self_reference_survives_growth},
     {"printf string stops at nul", test_printf_string_stops_at_nul},

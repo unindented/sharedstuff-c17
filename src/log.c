@@ -2,6 +2,7 @@
 
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdio.h>
 
 #include "shared/buf.h"
 #include "shared/str.h"
@@ -17,22 +18,25 @@
 static int log_error_finish(struct Log* log, struct Str file) __attribute__((nonnull(1)));
 
 int log_error(struct Log* log, const char* format, ...) {
+  // The first pass measures the message, and the second appends it, as `buf_printf` does.
   va_list args;
   va_start(args, format);
-  const int rc = log_error_v(log, format, args);
+  const ptrdiff_t message_len = vsnprintf(NULL, 0, format, args);
   va_end(args);
-  return rc;
-}
-
-int log_error_v(struct Log* log, const char* format, va_list args) {
-  buf_vprintf(&log->buf, format, args);
+  va_start(args, format);
+  buf_vprintf_measured(&log->buf, message_len, format, args);
+  va_end(args);
   return log_error_finish(log, (struct Str){0});
 }
 
 int log_error_in(struct Log* log, struct Str file, const char* format, ...) {
+  // The first pass measures the message, and the second appends it, as `buf_printf` does.
   va_list args;
   va_start(args, format);
-  buf_vprintf(&log->buf, format, args);
+  const ptrdiff_t message_len = vsnprintf(NULL, 0, format, args);
+  va_end(args);
+  va_start(args, format);
+  buf_vprintf_measured(&log->buf, message_len, format, args);
   va_end(args);
   return log_error_finish(log, file);
 }
